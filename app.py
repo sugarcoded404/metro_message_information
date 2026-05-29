@@ -580,19 +580,6 @@ else:
 
     st.info(mensaje)
 
-    st.markdown(
-        f"""
-        **Resumen ejecutivo**
-
-        - Franjas por encima de P75: **{horas_p75:,}**
-        - Franjas por encima de P95: **{horas_p95:,}**
-        - Horas saturadas: **{horas_saturadas:,}**
-        - Días con saturación: **{dias_saturados:,}**
-        - Máxima demanda observada: **{max_demanda:,.0f} pasajeros**
-        - Capacidad nominal Línea A: **{CAPACIDAD_LINEA_A:,} pasajeros**
-        """
-    )
-
 
 st.markdown(
     '<div class="insight-ok">'
