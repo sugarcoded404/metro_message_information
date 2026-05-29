@@ -120,10 +120,26 @@ with st.sidebar:
         max_value=df_raw["fecha"].max().date(),
     )
 
+    # ── Umbral dinámico: percentil 75 de la demanda horaria real ─────────────
+    hora_avg_raw   = df_raw.groupby("hora")["pasajeros"].mean()
+    umbral_sugerido = int(hora_avg_raw.quantile(0.75))
+    umbral_min     = int(hora_avg_raw.min())
+    umbral_max     = int(hora_avg_raw.max())
+    paso           = max(100, round((umbral_max - umbral_min) / 50, -2))
+
     umbral_pico = st.slider(
         "Umbral de alerta (pasajeros/hora)",
-        min_value=200, max_value=1500, value=650, step=50,
+        min_value=umbral_min,
+        max_value=umbral_max,
+        value=umbral_sugerido,
+        step=int(paso),
+        help=(
+            f"Valor por defecto: percentil 75 de la demanda horaria = **{umbral_sugerido:,} pax/h**. "
+            f"Las horas que superen este umbral se marcan en rojo. "
+            f"Ajusta según el criterio operativo de tu sistema."
+        ),
     )
+    st.caption(f"📊 Umbral sugerido (p75): {umbral_sugerido:,} pax/h")
 
     incluir_finde = st.checkbox("Incluir fines de semana", value=True)
 
@@ -208,8 +224,12 @@ with col_l:
         margin=dict(t=20, b=20, l=0, r=0),
         height=320,
     )
-    fig_hora.update_xaxes(tickmode="linear", dtick=1,
-                           gridcolor="#f0f0f0", zeroline=False)
+    fig_hora.update_xaxes(
+        tickmode="array",
+        tickvals=list(range(0, 24)),
+        ticktext=[f"{h:02d}:00" for h in range(0, 24)],
+        gridcolor="#f0f0f0", zeroline=False,
+    )
     fig_hora.update_yaxes(gridcolor="#f0f0f0")
     st.plotly_chart(fig_hora, use_container_width=True)
 
@@ -236,14 +256,33 @@ with col_r:
         legend=dict(orientation="h", y=-0.3),
         showlegend=True,
     )
-    fig_comp.update_xaxes(title="Hora", gridcolor="#f0f0f0")
+    fig_comp.update_xaxes(
+        title="Hora",
+        tickmode="array",
+        tickvals=list(range(0, 24)),
+        ticktext=[f"{h:02d}:00" for h in range(0, 24)],
+        gridcolor="#f0f0f0",
+    )
     fig_comp.update_yaxes(title="Pax", gridcolor="#f0f0f0")
     st.plotly_chart(fig_comp, use_container_width=True)
 
+# Calcular horas pico reales dinámicamente para los textos
+_hora_avg_texto = df.groupby("hora")["pasajeros"].mean()
+_horas_alerta   = sorted(_hora_avg_texto[_hora_avg_texto >= umbral_pico].index.tolist())
+_pico_am        = [h for h in _horas_alerta if h < 12]
+_pico_pm        = [h for h in _horas_alerta if h >= 12]
+_rango_am       = f"{min(_pico_am):02d}:00–{max(_pico_am):02d}:00" if _pico_am else "—"
+_rango_pm       = f"{min(_pico_pm):02d}:00–{max(_pico_pm):02d}:00" if _pico_pm else "—"
+
+_hora_lab  = df[~df["es_finde"]].groupby("hora")["pasajeros"].mean()
+_hora_fin  = df[df["es_finde"]].groupby("hora")["pasajeros"].mean()
+_ratio_txt = round(_hora_lab.max() / _hora_fin.max(), 1) if _hora_fin.max() > 0 else "N/D"
+
 st.markdown(
-    '<div class="insight-box">⚑ <b>Señal encontrada:</b> doble pico pronunciado '
-    'a las 7–9h y 17–19h. Los días laborales presentan un pico hasta 2.8× '
-    'mayor que los fines de semana en hora punta.</div>',
+    f'<div class="insight-box">⚑ <b>Señal encontrada:</b> doble pico pronunciado '
+    f'en la franja <b>{_rango_am}</b> (AM) y <b>{_rango_pm}</b> (PM). '
+    f'Los días laborales presentan un pico hasta <b>{_ratio_txt}×</b> '
+    f'mayor que los fines de semana en hora punta.</div>',
     unsafe_allow_html=True,
 )
 
@@ -318,14 +357,19 @@ fig_ej.update_layout(
     plot_bgcolor="white", paper_bgcolor="white",
     legend=dict(orientation="h", y=-0.12, x=0),
     margin=dict(t=30, b=20, l=0, r=0), height=400,
-    xaxis=dict(tickmode="linear", dtick=1, gridcolor="#f0f0f0", zeroline=False),
+    xaxis=dict(
+        tickmode="array",
+        tickvals=list(range(0, 24)),
+        ticktext=[f"{h:02d}:00" for h in range(0, 24)],
+        gridcolor="#f0f0f0", zeroline=False,
+    ),
     yaxis=dict(gridcolor="#f0f0f0"),
 )
 st.plotly_chart(fig_ej, use_container_width=True)
 
 # Carga por línea en hora pico
 st.markdown("#### Carga relativa por línea en hora pico")
-pax_por_linea_pico = (df[df["hora"].isin([7, 8, 17, 18])]
+pax_por_linea_pico = (df[df["hora"].isin(_horas_alerta)]
                       .groupby("linea")["pasajeros"].mean().reset_index()
                       .sort_values("pasajeros", ascending=True))
 pax_por_linea_pico.columns = ["linea", "pax_pico"]
