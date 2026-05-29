@@ -390,6 +390,210 @@ fig_carga.update_layout(
 )
 st.plotly_chart(fig_carga, use_container_width=True)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ANÁLISIS DE SATURACIÓN - LÍNEA A
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.markdown("---")
+
+CAPACIDAD_LINEA_A = 48653
+
+# Buscar Línea A de forma robusta
+df_a = df[
+    df["linea"]
+    .astype(str)
+    .str.upper()
+    .str.contains("A", na=False)
+].copy()
+
+# Diagnóstico temporal
+
+if len(df_a) == 0:
+
+    st.warning(
+        "No se encontraron registros para la Línea A con los filtros actuales."
+    )
+
+else:
+
+    # =====================================================
+    # AGRUPAR POR FECHA Y HORA
+    # =====================================================
+    # Esto permite comparar contra la capacidad real
+    # de la línea y no contra registros individuales.
+
+    df_a_hora = (
+        df_a
+        .groupby(["fecha", "hora"], as_index=False)["pasajeros"]
+        .sum()
+    )
+
+    # =====================================================
+    # PERCENTILES
+    # =====================================================
+
+    p75 = df_a_hora["pasajeros"].quantile(0.75)
+    p95 = df_a_hora["pasajeros"].quantile(0.95)
+
+    # =====================================================
+    # SATURACIÓN
+    # =====================================================
+
+    df_a_hora["supera_p75"] = (
+        df_a_hora["pasajeros"] >= p75
+    )
+
+    df_a_hora["supera_p95"] = (
+        df_a_hora["pasajeros"] >= p95
+    )
+
+    df_a_hora["saturado"] = (
+        df_a_hora["pasajeros"] >= CAPACIDAD_LINEA_A
+    )
+
+    horas_p75 = int(df_a_hora["supera_p75"].sum())
+    horas_p95 = int(df_a_hora["supera_p95"].sum())
+    horas_saturadas = int(df_a_hora["saturado"].sum())
+
+    dias_saturados = (
+        df_a_hora[df_a_hora["saturado"]]
+        ["fecha"]
+        .nunique()
+    )
+
+    max_demanda = df_a_hora["pasajeros"].max()
+
+    utilizacion_max = (
+        max_demanda / CAPACIDAD_LINEA_A
+    ) * 100
+
+    pct_capacidad_p75 = (
+        p75 / CAPACIDAD_LINEA_A
+    ) * 100
+
+    pct_capacidad_p95 = (
+        p95 / CAPACIDAD_LINEA_A
+    ) * 100
+
+    # =====================================================
+    # KPIs
+    # =====================================================
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+
+    # =====================================================
+    # DEMANDA PROMEDIO POR HORA
+    # =====================================================
+
+    hora_a = (
+        df_a_hora
+        .groupby("hora")["pasajeros"]
+        .mean()
+        .reset_index()
+    )
+
+    fig_sat = go.Figure()
+
+    fig_sat.add_trace(
+        go.Bar(
+            x=hora_a["hora"],
+            y=hora_a["pasajeros"],
+            name="Demanda promedio",
+            marker_color="#1D9E75"
+        )
+    )
+
+    fig_sat.add_hline(
+        y=p75,
+        line_dash="dash",
+        line_color="#BA7517",
+        annotation_text=f"P75 = {p75:,.0f}"
+    )
+
+    fig_sat.add_hline(
+        y=p95,
+        line_dash="dot",
+        line_color="#D85A30",
+        annotation_text=f"P95 = {p95:,.0f}"
+    )
+
+    fig_sat.add_hline(
+        y=CAPACIDAD_LINEA_A,
+        line_width=3,
+        line_color="red",
+        annotation_text=f"Capacidad = {CAPACIDAD_LINEA_A:,}"
+    )
+
+    fig_sat.update_layout(
+        title="Demanda promedio por hora vs capacidad Línea A",
+        height=500,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(t=60, b=20, l=0, r=0)
+    )
+
+    fig_sat.update_xaxes(
+        title="Hora",
+        tickmode="array",
+        tickvals=list(range(24)),
+        ticktext=[f"{h:02d}:00" for h in range(24)]
+    )
+
+    fig_sat.update_yaxes(
+        title="Pasajeros",
+        gridcolor="#f0f0f0"
+    )
+
+    st.plotly_chart(
+        fig_sat,
+        use_container_width=True
+    )
+
+    # =====================================================
+    # INTERPRETACIÓN AUTOMÁTICA
+    # =====================================================
+
+    if utilizacion_max < 70:
+
+        mensaje = (
+            f"La máxima demanda observada utiliza solo "
+            f"{utilizacion_max:.1f}% de la capacidad. "
+            f"No existe evidencia de saturación operativa."
+        )
+
+    elif utilizacion_max < 90:
+
+        mensaje = (
+            f"La Línea A alcanza hasta "
+            f"{utilizacion_max:.1f}% de utilización. "
+            f"Existen periodos de alta ocupación que deben monitorearse."
+        )
+
+    else:
+
+        mensaje = (
+            f"La Línea A alcanza "
+            f"{utilizacion_max:.1f}% de utilización. "
+            f"Existe riesgo de saturación durante las horas pico."
+        )
+
+    st.info(mensaje)
+
+    st.markdown(
+        f"""
+        **Resumen ejecutivo**
+
+        - Franjas por encima de P75: **{horas_p75:,}**
+        - Franjas por encima de P95: **{horas_p95:,}**
+        - Horas saturadas: **{horas_saturadas:,}**
+        - Días con saturación: **{dias_saturados:,}**
+        - Máxima demanda observada: **{max_demanda:,.0f} pasajeros**
+        - Capacidad nominal Línea A: **{CAPACIDAD_LINEA_A:,} pasajeros**
+        """
+    )
+
+
 st.markdown(
     '<div class="insight-ok">'
     '<b>✅ Recomendación derivada del hallazgo</b><br>'
@@ -401,7 +605,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown("---")
+
 
 with st.expander("📋 Ver datos filtrados"):
     cols_mostrar = [c for c in ["fecha", "linea", "tipo_linea", "hora", "pasajeros", "TOTAL"]
