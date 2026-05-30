@@ -397,7 +397,7 @@ st.plotly_chart(fig_carga, use_container_width=True)
 
 st.markdown("---")
 
-CAPACIDAD_LINEA_A = 48653
+CAPACIDAD_LINEA_A = 97306
 
 # Buscar Línea A de forma robusta
 df_a = df[
@@ -511,12 +511,13 @@ else:
         annotation_text=f"P75 = {p75:,.0f}"
     )
 
-    fig_sat.add_hline(
-        y=p95,
-        line_dash="dot",
-        line_color="#D85A30",
-        annotation_text=f"P95 = {p95:,.0f}"
+    dias_sobre_p95 = (
+        df_a_hora[df_a_hora["supera_p95"]]
+        ["fecha"]
+        .nunique()
     )
+    
+
 
     fig_sat.add_hline(
         y=CAPACIDAD_LINEA_A,
